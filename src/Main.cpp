@@ -12,6 +12,8 @@ struct BinaryValue
     bool ticked = false;
 };
 
+typedef std::map<int, std::vector<int>> Table;
+
 std::vector<std::string> splitValues(const std::string& str)
 {
     std::vector<std::string> returnValues;
@@ -254,7 +256,7 @@ int convertToDenary(BinaryValue value)
     return i;
 }
 
-bool exists(std::map<int, std::vector<int>> map, int key)
+bool exists(Table map, int key)
 {
     return (map.find(key) != map.end());
 }
@@ -264,21 +266,120 @@ bool exists(std::map<int, int> map, int key)
     return (map.find(key) != map.end());
 }
 
+void removeDenaryFromValues(int index, Table& value_denary, Table& denary_value)
+{
+    std::vector<int> denary = value_denary[index];
+
+    for (int d : denary)
+    {
+        std::vector<int> values = denary_value[d];
+        for (int v : values)
+        {
+            auto pos = std::find(value_denary[v].begin(), value_denary[v].end(), d);
+            value_denary[v].erase(pos);
+        }
+        denary_value.erase(d);
+    }
+}
+
+std::vector<int> findHighest(const Table& value_denary)
+{
+    std::vector<int> highestValues;
+    int value;
+    size_t highest = 0;
+
+    for (auto it = value_denary.begin(); it != value_denary.end();)
+    {
+        if (it->second.size() > highest)
+        {
+            highest = it->second.size();
+            highestValues.clear();
+            highestValues.push_back(it->first);
+        }
+        else if (it->second.size() == highest && highest != 0)
+        {
+            highestValues.push_back(it->first);
+        }
+
+        it++;
+    }
+
+    return highestValues;
+}
+
+std::vector<BinaryValue> explorePrimeImplicant(int highest, std::vector<BinaryValue> values, Table value_denary, Table denary_value)
+{
+    std::vector<BinaryValue> returnValues;
+
+    returnValues.push_back(values.at(highest));
+
+    removeDenaryFromValues(highest, value_denary, denary_value);
+    value_denary.erase(highest);
+
+    while (true)
+    {
+        std::vector<int> highestValues = findHighest(value_denary);
+
+        if (highestValues.size() == 0)
+            break;
+
+        std::vector<BinaryValue> outcome;
+        size_t size = 0;
+        bool chosen = false;
+        size_t index = 0;
+
+        for (size_t i = 0; i < highestValues.size(); i++)
+        {
+            int high = highestValues.at(i);
+            std::vector<BinaryValue> temp = explorePrimeImplicant(high, values, value_denary, denary_value);
+
+            if (chosen)
+            {
+                if (temp.size() < size)
+                {
+                    outcome = temp;
+                    size = outcome.size();
+                    index = high;
+                }
+            }
+            else
+            {
+                outcome = temp;
+                size = outcome.size();
+                index = high;
+                chosen = true;
+            }
+        }
+
+        for (size_t i = 0; i < outcome.size(); i++)
+        {
+            returnValues.push_back(outcome.at(i));
+        }
+        removeDenaryFromValues(index, value_denary, denary_value);
+        value_denary.erase(index);
+    }
+
+    return returnValues;
+}
+
 /* Needs to be reworked to explore all paths when multiple values have the same number of outcomes
  * and to choose the outcome with the fewest outputs
  */
 std::vector<BinaryValue> primeImplicantChart(std::vector<BinaryValue> values, std::vector<BinaryValue> minterms)
 {
-    std::map<int, std::vector<int>> value_denary;
-    std::map<int, std::vector<int>> denary_value;
+    Table value_denary;
+    Table denary_value;
 
     std::map<int, int> denary_index;
 
+    // Add Minterms to denary_index
     for (size_t i = 0; i < minterms.size(); i++)
     {
         denary_index[minterms.at(i).decimal] = i;
     }
 
+    // Check through all values and if one corresponds to a minterm add it to
+    // denary_value and value_denary
     for (size_t i = 0; i < values.size(); i++)
     {
         BinaryValue v = values.at(i);
@@ -294,87 +395,60 @@ std::vector<BinaryValue> primeImplicantChart(std::vector<BinaryValue> values, st
                 denary_value[denary].push_back(i);
                 value_denary[i].push_back(denary);
             }
-
         }
     }
 
     std::vector<BinaryValue> returnValues;
 
+    // Find all the essential prime implicants and remove them
     std::vector<int> toRemove;
     for (auto it = denary_value.begin(); it != denary_value.end(); it++)
     {
-        std::cout << it->first << " " << it->second.size();
         if (it->second.size() == 1)
         {
-            std::cout << " X";
             toRemove.push_back(it->second.at(0));
             returnValues.push_back(values.at(it->second.at(0)));
         }
-        std::cout << "\n";
     }
-
 
     for (int i : toRemove)
     {
-        std::cout << values.at(i).value << "\n";
-        std::vector<int> denary = value_denary[i];
-
-        for (int d : denary)
-        {
-            std::vector<int> values = denary_value[d];
-            for (int v : values)
-            {
-                auto pos = std::find(value_denary[v].begin(), value_denary[v].end(), d);
-                value_denary[v].erase(pos);
-            }
-            denary_value.erase(d);
-        }
+        removeDenaryFromValues(i, value_denary, denary_value);
     }
-    std::cout << "\n";
 
-    bool empty = false;
-    while (!empty)
+    // Continue until nothing else if left, removing the value with the denary
+
+    // All possible outcomes of next step
+    std::vector<std::vector<BinaryValue>> possibleOutcomes;
+
+    std::vector<int> highestValues = findHighest(value_denary);
+
+    for (int i : highestValues)
     {
-        int value;
-        size_t highest = 0;
-        for (auto it = value_denary.begin(); it != value_denary.end();)
-        {
-            if (it->second.size() > highest)
-            {
-                highest = it->second.size();
-                value = it->first;
-            }
-            it++;
-        }
+        possibleOutcomes.push_back(explorePrimeImplicant(i, values, value_denary, denary_value));
+    }
 
-        returnValues.push_back(values.at(value));
-        std::vector<int> denary = value_denary[value];
-
-        for (size_t i = 0; i < denary.size(); i++)
+    size_t size = -1;
+    size_t index = 0;
+    bool found = false;
+    for (size_t i = 0; i < possibleOutcomes.size(); i++)
+    {
+        if (possibleOutcomes.at(i).size() < size)
         {
-            int index = denary[i];
-            std::vector<int> newValue = denary_value[index];
-            for (size_t j = 0; j < newValue.size(); j++)
-            {
-                int index2 = newValue[j];
-                auto pos = std::find(value_denary[index2].begin(), value_denary[index2].end(), index);
-                if (pos != value_denary[index2].end())
-                    value_denary[index2].erase(pos);
-            }
-            denary_value.erase(index);
-        }
-        value_denary.erase(value);
-
-        empty = true;
-        for (auto& v : value_denary)
-        {
-            if (v.second.size() != 0)
-            {
-                empty = false;
-                break;
-            }
+            size = possibleOutcomes.at(i).size();
+            index = i;
+            found = true;
         }
     }
+
+    if (found)
+    {
+        for (size_t i = 0; i < possibleOutcomes.at(index).size(); i++)
+        {
+            returnValues.push_back(possibleOutcomes.at(index).at(i));
+        }
+    }
+
 
     returnValues = removeDuplicates(returnValues);
 
@@ -425,8 +499,26 @@ std::string convertToSOP(std::vector<std::string> variables, std::vector<BinaryV
     return returnString;
 }
 
-int main()
+#define getArgument(argv) argv[0]
+#define nextArgument(argv) argv = &argv[1]
+
+int main(int argc, char** argv)
 {
+    nextArgument(argv);
+    if (argc > 4 || argc < 3)
+    {
+        std::cout << "Invalid usage: QMMethod \"Variable Names\" \"minterms\" (\"dontcarers\")";
+        return -1;
+    }
+
+    std::string variableNames { getArgument(argv) };
+    nextArgument(argv);
+    std::string minterms { getArgument(argv) };
+    nextArgument(argv);
+
+    std::string dontcares = "";
+    if (argc == 4) dontcares = std::string { getArgument(argv) };
+
     /* std::cout << "Please enter the name of the variables, space seperated\n"; */
     /* std::string variableNames; */
     /* std::getline(std::cin, variableNames); */
@@ -439,9 +531,19 @@ int main()
     /* std::string dontcares; */
     /* std::getline(std::cin, dontcares); */
 
-    std::string variableNames = "A B C D E";
-    std::string minterms = "0 1 2 3 6 8 9 10 11 17 20 21 23 25 28 30 31";
-    std::string dontcares = "";
+    /* std::string variableNames = "A B C D E"; */
+    /* std::string minterms = "0 1 2 3 6 8 9 10 11 17 20 21 23 25 28 30 31"; */
+    /* std::string dontcares = ""; */
+    // Should output --001 0-0-- 00-10 1010- 111-0 1-111
+
+    /* std::string variableNames = "A B C D"; */
+    /* std::string minterms = "0 1 3 4 7 12 13 15"; */
+    /* std::string dontcares = ""; */
+    // 000- -100 0-11 11-1
+
+    /* std::string variableNames = "A B C D"; */
+    /* std::string minterms = "4 5 6 8 9 10 13"; */
+    /* std::string dontcares = "0 7 15"; */
 
     std::vector<std::string> variables = splitValues(variableNames);
     int bits = variables.size();
@@ -452,11 +554,6 @@ int main()
     std::vector<BinaryValue> starred = combineGroups(groups, bits);
     starred = removeDuplicates(starred);
 
-    for (BinaryValue v : starred)
-    {
-        std::cout << v.value << "\n";
-    }
-
     std::vector<BinaryValue> results = primeImplicantChart(starred, mintermBinary);
 
     for (BinaryValue v : results)
@@ -465,7 +562,7 @@ int main()
     }
 
     std::string output = convertToSOP(variables, results);
-    std::cout << output << "\n";
+    std::cout << "\n" << output << "\n";
 
     return 0;
 }
